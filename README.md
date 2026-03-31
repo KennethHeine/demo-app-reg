@@ -4,6 +4,7 @@ Additional documentation:
 
 - [docs/goal-and-intent.md](docs/goal-and-intent.md)
 - [docs/setup-architecture.md](docs/setup-architecture.md)
+- [docs/test-end-to-end-script.md](docs/test-end-to-end-script.md)
 - [docs/token-claims-explained.md](docs/token-claims-explained.md)
 
 End-to-end Entra ID demo with three applications:
