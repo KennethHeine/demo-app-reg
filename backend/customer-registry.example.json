@@ -1,0 +1,14 @@
+{
+  "customers": [
+    {
+      "customerId": "customer-python",
+      "appId": "00000000-0000-0000-0000-000000000001",
+      "displayName": "demo-app-reg-customer-python"
+    },
+    {
+      "customerId": "customer-typescript",
+      "appId": "00000000-0000-0000-0000-000000000002",
+      "displayName": "demo-app-reg-customer-typescript"
+    }
+  ]
+}

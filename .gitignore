@@ -1,0 +1,9 @@
+.env
+*.local.json
+.backend.*.log
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+dist/

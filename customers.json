@@ -1,0 +1,16 @@
+{
+  "customers": [
+    {
+      "customerId": "customer-python",
+      "displayName": "demo-app-reg-customer-python",
+      "envFilePath": "customer-python/.env",
+      "apiBaseUrl": "http://127.0.0.1:8000"
+    },
+    {
+      "customerId": "customer-typescript",
+      "displayName": "demo-app-reg-customer-typescript",
+      "envFilePath": "customer-typescript/.env",
+      "apiBaseUrl": "http://127.0.0.1:8000"
+    }
+  ]
+}
