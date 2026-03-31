@@ -335,6 +335,47 @@ function Set-KeyVaultSecretValue {
     }
 }
 
+function Get-KeyVaultSecretBundle {
+    param(
+        [Parameter(Mandatory = $true)][string]$VaultName,
+        [Parameter(Mandatory = $true)][string]$SecretName
+    )
+
+    $secretJson = az keyvault secret show --vault-name $VaultName --name $SecretName --output json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($secretJson)) {
+        throw "Failed to retrieve secret '$SecretName' from Key Vault '$VaultName'."
+    }
+
+    return $secretJson | ConvertFrom-Json
+}
+
+function Export-KeyVaultCertificateSecret {
+    param(
+        [Parameter(Mandatory = $true)][string]$VaultName,
+        [Parameter(Mandatory = $true)][string]$CertificateName,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    $secretBundle = Get-KeyVaultSecretBundle -VaultName $VaultName -SecretName $CertificateName
+    $contentType = [string]$secretBundle.contentType
+    $secretValue = [string]$secretBundle.value
+    if ([string]::IsNullOrWhiteSpace($secretValue)) {
+        throw "Certificate secret '$CertificateName' in Key Vault '$VaultName' did not contain a value."
+    }
+
+    $directoryPath = Split-Path -Parent $OutputPath
+    if (-not [string]::IsNullOrWhiteSpace($directoryPath)) {
+        New-Item -Path $directoryPath -ItemType Directory -Force | Out-Null
+    }
+
+    if ($contentType -match 'pkcs12' -or $OutputPath.EndsWith('.pfx')) {
+        [System.IO.File]::WriteAllBytes($OutputPath, [Convert]::FromBase64String($secretValue))
+    }
+    else {
+        Set-Content -Path $OutputPath -Value $secretValue -Encoding utf8
+    }
+}
+
 function Reset-CertificateCredential {
     param(
         [Parameter(Mandatory = $true)][string]$AppId,
@@ -564,6 +605,15 @@ function Write-EnvFile {
     Set-Content -Path $Path -Value $content -Encoding utf8
 }
 
+function Get-RelativePathSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$BasePath,
+        [Parameter(Mandatory = $true)][string]$TargetPath
+    )
+
+    return [System.IO.Path]::GetRelativePath($BasePath, $TargetPath)
+}
+
 if ($UseAzureCli) {
     $resolvedTenantId = Connect-GraphWithAzureCli
     $effectiveTenantId = if ([string]::IsNullOrWhiteSpace($TenantId)) { $resolvedTenantId } else { $TenantId }
@@ -644,20 +694,25 @@ foreach ($customerDefinition in $customerDefinitions) {
     $customerServicePrincipal = Get-OrCreateServicePrincipal -AppId $customerApplication.appId
 
     Ensure-AppRoleAssignment -PrincipalServicePrincipal $customerServicePrincipal -ResourceServicePrincipal $backendServicePrincipal -RoleId $backendRole.id
-    $resolvedEnvFilePath = $null
     $configuredEnvFilePath = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'envFilePath')
+    $resolvedEnvFilePath = if (-not [string]::IsNullOrWhiteSpace($configuredEnvFilePath)) {
+        Resolve-WorkspacePath -Root $root -PathValue $configuredEnvFilePath
+    }
+    else {
+        $null
+    }
     $apiBaseUrl = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'apiBaseUrl')
     if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) {
         $apiBaseUrl = 'http://127.0.0.1:8000'
     }
+    $resolvedCertificateOutputPath = $null
 
     $envLines = @(
         "TENANT_ID=$effectiveTenantId",
         "CLIENT_ID=$($customerApplication.appId)",
         "API_SCOPE=$apiScope",
         "API_BASE_URL=$apiBaseUrl",
-        "EXPECTED_CUSTOMER_ID=$customerId",
-        "KEY_VAULT_URL=$keyVaultUrl"
+        "EXPECTED_CUSTOMER_ID=$customerId"
     )
 
     switch ($customerAuthMethod.ToLowerInvariant()) {
@@ -666,14 +721,34 @@ foreach ($customerDefinition in $customerDefinitions) {
             Set-KeyVaultSecretValue -VaultName $resolvedKeyVaultName -SecretName $secretName -SecretValue $customerSecret
             $envLines += @(
                 'CLIENT_AUTH_MODE=secret',
-                "CLIENT_SECRET_NAME=$secretName"
+                "CLIENT_SECRET=$customerSecret"
             )
         }
         'certificate' {
             Reset-CertificateCredential -AppId $customerApplication.appId -KeyVaultName $resolvedKeyVaultName -CertificateName $certificateName -DisplayName $localCertificateDisplayName
+            $configuredCertificatePath = Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'localCertificatePath'
+            $configuredCertificatePathText = [string]$configuredCertificatePath
+
+            if ([string]::IsNullOrWhiteSpace($configuredCertificatePathText)) {
+                if ($null -ne $resolvedEnvFilePath) {
+                    $configuredCertificatePathText = Join-Path -Path (Split-Path -Parent $resolvedEnvFilePath) -ChildPath "$certificateName.pfx"
+                }
+                else {
+                    $configuredCertificatePathText = Join-Path -Path $root -ChildPath "$certificateName.pfx"
+                }
+            }
+
+            $resolvedCertificateOutputPath = Resolve-WorkspacePath -Root $root -PathValue $configuredCertificatePathText
+            Export-KeyVaultCertificateSecret -VaultName $resolvedKeyVaultName -CertificateName $certificateName -OutputPath $resolvedCertificateOutputPath
+
+            $certificatePathForEnv = $resolvedCertificateOutputPath
+            if ($null -ne $resolvedEnvFilePath) {
+                $certificatePathForEnv = Get-RelativePathSafe -BasePath (Split-Path -Parent $resolvedEnvFilePath) -TargetPath $resolvedCertificateOutputPath
+            }
+
             $envLines += @(
                 'CLIENT_AUTH_MODE=certificate',
-                "CLIENT_CERTIFICATE_SECRET_NAME=$certificateName"
+                "CLIENT_CERTIFICATE_PATH=$certificatePathForEnv"
             )
         }
         default {
@@ -681,8 +756,7 @@ foreach ($customerDefinition in $customerDefinitions) {
         }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($configuredEnvFilePath)) {
-        $resolvedEnvFilePath = Resolve-WorkspacePath -Root $root -PathValue $configuredEnvFilePath
+    if ($null -ne $resolvedEnvFilePath) {
         Write-EnvFile -Path $resolvedEnvFilePath -Lines $envLines
     }
 

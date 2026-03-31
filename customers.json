@@ -27,6 +27,7 @@
       "runtime": "python",
       "entryPoint": "customer-python-cert/main.py",
       "envFilePath": "customer-python-cert/.env",
+      "localCertificatePath": "customer-python-cert/customer-python-cert-client-certificate.pfx",
       "apiBaseUrl": "http://127.0.0.1:8000",
       "authMethod": "certificate",
       "keyVaultCertificateName": "customer-python-cert-client-certificate"

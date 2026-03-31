@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
-import re
 import sys
 import textwrap
 from datetime import UTC, datetime
@@ -11,9 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import msal
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
-from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 from dotenv import dotenv_values
@@ -23,83 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 CUSTOMERS_PATH = ROOT / "customers.json"
 OUTPUT_DIR = ROOT / "token-examples"
 
-_credential: DefaultAzureCredential | None = None
-_secret_clients: dict[str, SecretClient] = {}
-
 
 def require_value(mapping: dict[str, str], name: str) -> str:
     value = str(mapping.get(name, "") or "").strip()
     if not value:
         raise RuntimeError(f"Missing required configuration value: {name}")
     return value
-
-
-def get_azure_credential() -> DefaultAzureCredential:
-    global _credential
-    if _credential is None:
-        _credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
-    return _credential
-
-
-def get_secret_client(vault_url: str) -> SecretClient:
-    client = _secret_clients.get(vault_url)
-    if client is None:
-        client = SecretClient(vault_url=vault_url, credential=get_azure_credential())
-        _secret_clients[vault_url] = client
-    return client
-
-
-def get_key_vault_secret(config: dict[str, str], secret_env_name: str) -> tuple[str, str]:
-    vault_url = require_value(config, "KEY_VAULT_URL")
-    secret_name = require_value(config, secret_env_name)
-    secret_bundle = get_secret_client(vault_url).get_secret(secret_name)
-    if not secret_bundle.value:
-        raise RuntimeError(f"Key Vault secret '{secret_name}' did not contain a value.")
-    return secret_bundle.value, str(secret_bundle.properties.content_type or "")
-
-
-def extract_pem_block(pem_bytes: bytes, labels: tuple[bytes, ...]) -> bytes:
-    for label in labels:
-        matches = re.findall(
-            rb"-----BEGIN " + label + rb"-----.*?-----END " + label + rb"-----",
-            pem_bytes,
-            re.DOTALL,
-        )
-        if matches:
-            return matches[0]
-
-    raise RuntimeError("The certificate secret did not contain a supported PEM private key block.")
-
-
-def load_certificate_credential_from_pem(secret_value: str, password: str) -> dict[str, str]:
-    pem_bytes = secret_value.encode("utf-8")
-    private_key_bytes = extract_pem_block(
-        pem_bytes,
-        (b"PRIVATE KEY", b"RSA PRIVATE KEY", b"EC PRIVATE KEY", b"ENCRYPTED PRIVATE KEY"),
-    )
-    certificate_matches = re.findall(
-        rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
-        pem_bytes,
-        re.DOTALL,
-    )
-    if not certificate_matches:
-        raise RuntimeError("The certificate secret did not contain a PEM certificate block.")
-
-    certificate = x509.load_pem_x509_certificate(certificate_matches[0])
-    private_key = serialization.load_pem_private_key(
-        private_key_bytes,
-        password=password.encode("utf-8") if password else None,
-    )
-
-    return {
-        "private_key": private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        ).decode("utf-8"),
-        "thumbprint": certificate.fingerprint(hashes.SHA1()).hex(),
-        "public_certificate": b"".join(certificate_matches).decode("utf-8"),
-    }
 
 
 def load_certificate_credential_from_pkcs12(secret_value: str, password: str) -> dict[str, str]:
@@ -127,26 +51,29 @@ def load_certificate_credential_from_pkcs12(secret_value: str, password: str) ->
     }
 
 
-def get_client_credential(config: dict[str, str]) -> str | dict[str, str]:
+def resolve_env_relative_path(config: dict[str, str], env_path: Path, name: str) -> Path:
+    configured_value = require_value(config, name)
+    configured_path = Path(configured_value)
+    if configured_path.is_absolute():
+        return configured_path
+    return (env_path.parent / configured_path).resolve()
+
+
+def get_client_credential(config: dict[str, str], env_path: Path) -> str | dict[str, str]:
     auth_mode = str(config.get("CLIENT_AUTH_MODE", "secret") or "secret").strip().lower()
     if auth_mode == "certificate":
-        secret_value, content_type = get_key_vault_secret(config, "CLIENT_CERTIFICATE_SECRET_NAME")
+        certificate_path = resolve_env_relative_path(config, env_path, "CLIENT_CERTIFICATE_PATH")
+        if not certificate_path.exists():
+            raise RuntimeError(f"Certificate file not found: {certificate_path}")
         password = str(config.get("CLIENT_CERTIFICATE_PASSWORD", "") or "").strip()
-        normalized_content_type = content_type.lower()
-        if "pkcs12" in normalized_content_type or normalized_content_type.endswith("pfx"):
-            return load_certificate_credential_from_pkcs12(secret_value, password)
-        return load_certificate_credential_from_pem(secret_value, password)
-
-    configured_secret_name = str(config.get("CLIENT_SECRET_NAME", "") or "").strip()
-    if configured_secret_name:
-        secret_value, _ = get_key_vault_secret(config, "CLIENT_SECRET_NAME")
-        return secret_value
+        secret_value = base64.b64encode(certificate_path.read_bytes()).decode("utf-8")
+        return load_certificate_credential_from_pkcs12(secret_value, password)
 
     direct_secret = str(config.get("CLIENT_SECRET", "") or "").strip()
     if direct_secret:
         return direct_secret
 
-    raise RuntimeError("No client credential source was configured.")
+    raise RuntimeError("No local client credential source was configured.")
 
 
 def decode_segment(segment: str) -> dict[str, Any]:
@@ -251,7 +178,7 @@ def export_tokens() -> list[tuple[str, Path]]:
 
         application = msal.ConfidentialClientApplication(
             client_id=client_id,
-            client_credential=get_client_credential(config),
+            client_credential=get_client_credential(config, env_path),
             authority=f"https://login.microsoftonline.com/{tenant_id}",
         )
 
@@ -268,7 +195,16 @@ def export_tokens() -> list[tuple[str, Path]]:
         )
         exports.append((customer_id, output_path))
 
-    index_lines = ["# JWT Examples", "", "Generated token example files:", ""]
+    index_lines = [
+        "# JWT Examples",
+        "",
+        "Explanation of the most important claims and how the backend uses them:",
+        "",
+        "- [../docs/token-claims-explained.md](../docs/token-claims-explained.md)",
+        "",
+        "Generated token example files:",
+        "",
+    ]
     index_lines.extend(f"- {customer_id}: {path.name}" for customer_id, path in exports)
     index_lines.append("")
     (OUTPUT_DIR / "README.md").write_text("\n".join(index_lines), encoding="utf-8")

@@ -11,7 +11,7 @@ Show how multiple customer applications can call the same backend API while only
 - A shared API can validate Microsoft Entra access tokens reliably.
 - Customer applications can authenticate as confidential clients with either a client secret or a certificate.
 - The backend can combine coarse-grained authorization and fine-grained tenant-specific routing.
-- Credentials can be pulled from Azure Key Vault instead of being stored directly in local configuration.
+- Customer apps can keep their runtime secret or certificate locally while the platform still maintains an internal backup and certificate source.
 - Customer onboarding can scale through a manifest-driven provisioning model instead of code changes and one-off manual setup.
 
 ## Why The Design Uses Both Role And App Id Mapping
@@ -29,10 +29,10 @@ The first version stored credentials directly in local `.env` files. That works 
 
 Key Vault improves the setup by:
 
-- Removing raw secret values from committed configuration examples.
-- Allowing the same client code to resolve credentials at runtime.
-- Supporting a clean path to certificate-based auth.
-- Creating a more realistic model for future deployment work.
+- Keeping an internal backup of customer credentials outside the customer app folders.
+- Acting as the certificate creation source for certificate-auth customers.
+- Supporting certificate-based auth without forcing customers to call your internal vault at runtime.
+- Creating a more realistic separation between your internal credential handling and customer-owned application runtime.
 
 ## Intended Audience
 

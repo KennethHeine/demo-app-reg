@@ -7,7 +7,7 @@ This demo is a tenant-local reference setup for machine-to-machine access from c
 - Backend API: Python FastAPI application that validates Microsoft Entra access tokens.
 - Customer apps: two secret-based confidential clients and one certificate-based confidential client.
 - Microsoft Entra ID: identity store for app registrations, service principals, application roles, and token issuance.
-- Azure Key Vault: storage for secret-based customer credentials and the certificate used by the certificate-based customer.
+- Azure Key Vault: internal backup store for customer credentials and certificate creation source for certificate-based customers.
 - Customer manifest: `customers.json` is the onboarding source of truth for local demo customers.
 - Customer registry: `backend/customer-registry.local.json` is generated from the manifest and used by the backend to map caller app ids to customer ids.
 
@@ -22,10 +22,10 @@ This demo is a tenant-local reference setup for machine-to-machine access from c
 
 ## Credential Storage
 
-- Secret-based customers do not keep the secret value in `.env`.
-- Their `.env` files contain the Key Vault URL and secret name.
-- The client loads the secret from Key Vault at runtime through `DefaultAzureCredential`.
-- The certificate-based customer reads the certificate secret from Key Vault and passes the private key, thumbprint, and public certificate into MSAL.
+- Secret-based customers keep their own local client secret inside their generated `.env` file.
+- The certificate-based customer keeps a local `.pfx` file generated into its app folder.
+- Azure Key Vault still stores an internal backup of secret-based customer credentials.
+- Azure Key Vault is also used to create and retain the certificate material that is exported into the certificate-based customer app folder.
 
 ## Provisioning Flow
 
@@ -38,8 +38,10 @@ This demo is a tenant-local reference setup for machine-to-machine access from c
 5. Reads `customers.json` and provisions each customer app registration.
 6. Assigns the backend application role to each customer service principal.
 7. Creates a secret or certificate credential per customer based on the configured auth mode.
-8. Stores secret credentials in Key Vault and writes `.env` files that reference Key Vault.
-9. Regenerates `backend/customer-registry.local.json` for backend authorization.
+8. Stores secret credentials in Key Vault as internal backup.
+9. Exports certificate credentials into a local customer app file when the customer uses certificate auth.
+10. Writes local `.env` files for the customer apps with the secret value or local certificate path.
+11. Regenerates `backend/customer-registry.local.json` for backend authorization.
 
 ## Scaling Pattern
 
