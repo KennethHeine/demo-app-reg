@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 import jwt
@@ -13,7 +14,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from .config import Settings, get_settings
 
 
+logger = logging.getLogger(__name__)
+
 bearer_scheme = HTTPBearer(auto_error=False)
+
+_OPENID_CONFIG_TTL_SECONDS = 86400  # 24 hours
+_JWKS_TTL_SECONDS = 3600  # 1 hour
+
+_openid_config_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_jwks_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
 @dataclass(frozen=True)
@@ -27,29 +36,38 @@ def _build_http_error(status_code: int, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=detail)
 
 
-@lru_cache(maxsize=1)
 def _load_openid_configuration(tenant_id: str) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _openid_config_cache.get(tenant_id)
+    if cached and (now - cached[0]) < _OPENID_CONFIG_TTL_SECONDS:
+        return cached[1]
+
     metadata_url = (
         f"https://login.microsoftonline.com/{tenant_id}/v2.0/.well-known/openid-configuration"
     )
     response = requests.get(metadata_url, timeout=15)
     response.raise_for_status()
-    return response.json()
+    data = response.json()
+    _openid_config_cache[tenant_id] = (now, data)
+    return data
 
 
-def _get_allowed_issuers(settings: Settings, configuration: dict[str, Any]) -> set[str]:
-    return {
-        configuration["issuer"],
-        f"https://sts.windows.net/{settings.tenant_id}/",
-        f"https://login.microsoftonline.com/{settings.tenant_id}/v2.0",
-    }
+def _get_expected_issuer(settings: Settings) -> str:
+    return f"https://login.microsoftonline.com/{settings.tenant_id}/v2.0"
 
 
-@lru_cache(maxsize=1)
-def _load_jwks(jwks_uri: str) -> list[dict[str, Any]]:
+def _load_jwks(jwks_uri: str, *, force_refresh: bool = False) -> list[dict[str, Any]]:
+    now = time.monotonic()
+    if not force_refresh:
+        cached = _jwks_cache.get(jwks_uri)
+        if cached and (now - cached[0]) < _JWKS_TTL_SECONDS:
+            return cached[1]
+
     response = requests.get(jwks_uri, timeout=15)
     response.raise_for_status()
-    return response.json()["keys"]
+    keys = response.json()["keys"]
+    _jwks_cache[jwks_uri] = (now, keys)
+    return keys
 
 
 def _get_signing_key(kid: str, jwks_uri: str) -> dict[str, Any]:
@@ -57,27 +75,25 @@ def _get_signing_key(kid: str, jwks_uri: str) -> dict[str, Any]:
         if key.get("kid") == kid:
             return key
 
-    _load_jwks.cache_clear()
-
-    for key in _load_jwks(jwks_uri):
+    for key in _load_jwks(jwks_uri, force_refresh=True):
         if key.get("kid") == kid:
             return key
 
     raise _build_http_error(
         status.HTTP_401_UNAUTHORIZED,
-        "Unable to resolve the token signing key.",
+        "Unauthorized.",
     )
 
 
 def validate_access_token(access_token: str, settings: Settings) -> AuthContext:
     configuration = _load_openid_configuration(settings.tenant_id)
-    allowed_issuers = _get_allowed_issuers(settings, configuration)
+    expected_issuer = _get_expected_issuer(settings)
     unverified_header = jwt.get_unverified_header(access_token)
     kid = str(unverified_header.get("kid") or "")
     if not kid:
         raise _build_http_error(
             status.HTTP_401_UNAUTHORIZED,
-            "Token header did not include a signing key identifier.",
+            "Unauthorized.",
         )
 
     signing_key = _get_signing_key(kid, configuration["jwks_uri"])
@@ -88,46 +104,43 @@ def validate_access_token(access_token: str, settings: Settings) -> AuthContext:
             key=jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(signing_key)),
             algorithms=["RS256"],
             audience=list(settings.expected_audiences),
-            options={"verify_iss": False},
+            issuer=expected_issuer,
         )
     except jwt.PyJWTError as exc:
+        logger.warning("Token validation failed: %s", exc)
         raise _build_http_error(
             status.HTTP_401_UNAUTHORIZED,
-            f"Token validation failed: {exc}",
+            "Unauthorized.",
         ) from exc
 
-    issuer = str(claims.get("iss") or "")
-    if issuer not in allowed_issuers:
-        raise _build_http_error(
-            status.HTTP_401_UNAUTHORIZED,
-            f"Token issuer was not allowed: {issuer}",
-        )
-
     if str(claims.get("tid") or "") != settings.tenant_id:
+        logger.warning("Token tenant mismatch: got %s", claims.get("tid"))
         raise _build_http_error(
             status.HTTP_401_UNAUTHORIZED,
-            "Token tenant did not match the expected tenant.",
+            "Unauthorized.",
         )
 
     roles = claims.get("roles") or []
     if settings.required_app_role not in roles:
         raise _build_http_error(
             status.HTTP_403_FORBIDDEN,
-            f"Token is missing the required role '{settings.required_app_role}'.",
+            "Forbidden.",
         )
 
-    caller_app_id = str(claims.get("azp") or claims.get("appid") or "").lower()
+    caller_app_id = str(claims.get("azp") or "").lower()
     if not caller_app_id:
+        logger.warning("Token did not include an azp claim.")
         raise _build_http_error(
             status.HTTP_401_UNAUTHORIZED,
-            "Token did not include a caller application id.",
+            "Unauthorized.",
         )
 
     customer_id = settings.customer_by_app_id.get(caller_app_id)
     if not customer_id:
+        logger.warning("Caller app id %s is not mapped to a customer.", caller_app_id)
         raise _build_http_error(
             status.HTTP_403_FORBIDDEN,
-            "Caller application is not mapped to an allowed customer.",
+            "Forbidden.",
         )
 
     return AuthContext(
@@ -144,7 +157,7 @@ def get_auth_context(
     if credentials is None:
         raise _build_http_error(
             status.HTTP_401_UNAUTHORIZED,
-            "A bearer token is required.",
+            "Unauthorized.",
         )
 
     return validate_access_token(credentials.credentials, settings)

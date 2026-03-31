@@ -59,3 +59,19 @@ This is enough for tens or low hundreds of customers in a demo or controlled env
 - `scripts/bootstrap.ps1` installs Python and Node dependencies.
 - `scripts/test-end-to-end.ps1` starts the backend and runs every customer defined in `customers.json`.
 - `scripts/export-jwt-examples.ps1` acquires tokens for every customer and writes readable JWT example files into `token-examples`.
+
+## Production Considerations
+
+### Hosting on Azure Container Apps
+
+For production, deploy the backend API as an Azure Container App. Container Apps provides most of what you would otherwise need a separate API gateway for:
+
+- **Rate limiting**: built-in IP-based rate limiting on the ingress layer without additional infrastructure.
+- **Authentication**: Easy Auth can validate Entra ID tokens at the platform level before requests reach the backend. The backend can still perform its own fine-grained authorization (role and customer mapping).
+- **Revisions and traffic splitting**: deploy new versions alongside the current one, then shift traffic gradually or use blue-green deployment.
+- **Autoscaling**: scale to zero when idle (cost savings) and scale out based on HTTP concurrency or custom metrics.
+- **Observability**: built-in integration with Azure Monitor and Application Insights for request tracing, logging, and metrics.
+- **Dapr integration**: optional sidecar for service-to-service calls, secret management, and pub/sub if the platform grows beyond a single API.
+- **Custom domains and TLS**: managed certificates for HTTPS without manual cert provisioning.
+
+This avoids the operational overhead and cost of a dedicated API Management instance while still covering rate limiting, auth offloading, versioning, and monitoring for a customer-facing API.

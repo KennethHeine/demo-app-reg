@@ -5,7 +5,6 @@ from typing import Any
 from fastapi import Depends, FastAPI
 
 from .auth import AuthContext, get_auth_context
-from .config import Settings, get_settings
 from .data import MOCK_CUSTOMER_DATA
 
 
@@ -21,13 +20,8 @@ def read_root() -> dict[str, Any]:
 
 
 @app.get("/health")
-def read_health(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "tenant_id": settings.tenant_id,
-        "accepted_audiences": list(settings.expected_audiences),
-        "registered_customers": len(settings.customer_by_app_id),
-    }
+def read_health() -> dict[str, Any]:
+    return {"status": "ok"}
 
 
 @app.get("/customer-data")

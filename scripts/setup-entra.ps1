@@ -500,6 +500,9 @@ function Update-BackendApplication {
     $updateBody = @{
         identifierUris = @($IdentifierUri)
         appRoles = @($otherRoles + $matchingRole)
+        api = @{
+            requestedAccessTokenVersion = 2
+        }
     }
 
     Invoke-GraphJson -Method PATCH -Uri "https://graph.microsoft.com/v1.0/applications/$($Application.id)" -Body $updateBody | Out-Null
