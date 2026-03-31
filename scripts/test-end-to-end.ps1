@@ -11,6 +11,7 @@ $pythonExe = Join-Path $root '.venv\Scripts\python.exe'
 $backendUrl = "http://127.0.0.1:$Port"
 $stdoutLog = Join-Path $root '.backend.stdout.log'
 $stderrLog = Join-Path $root '.backend.stderr.log'
+$customerDefinitionsPath = Join-Path $root 'customers.json'
 
 if (-not (Test-Path $pythonExe)) {
     throw 'Python virtual environment not found. Run .\scripts\bootstrap.ps1 first.'
@@ -58,31 +59,64 @@ function Invoke-Retry {
     }
 }
 
+function Get-CustomerDefinitions {
+    if (-not (Test-Path $customerDefinitionsPath)) {
+        throw "Customer definitions file was not found: $customerDefinitionsPath"
+    }
+
+    $definitions = (Get-Content -Path $customerDefinitionsPath -Raw | ConvertFrom-Json).customers
+    if ($null -eq $definitions -or @($definitions).Count -eq 0) {
+        throw "Customer definitions file did not contain any customers: $customerDefinitionsPath"
+    }
+
+    return @($definitions)
+}
+
+function Invoke-CustomerApplication {
+    param([Parameter(Mandatory = $true)][object]$Customer)
+
+    $runtime = [string]$Customer.runtime
+    switch ($runtime.ToLowerInvariant()) {
+        'python' {
+            $entryPoint = Join-Path $root ([string]$Customer.entryPoint)
+            return & $pythonExe $entryPoint
+        }
+        'typescript' {
+            $workingDirectory = Join-Path $root ([string]$Customer.workingDirectory)
+            Push-Location $workingDirectory
+            try {
+                return npm run --silent dev
+            }
+            finally {
+                Pop-Location
+            }
+        }
+        default {
+            throw "Unsupported customer runtime '$runtime' for customer '$($Customer.customerId)'."
+        }
+    }
+}
+
 $backendProcess = Start-Process -FilePath $pythonExe -ArgumentList '-m', 'uvicorn', 'backend.app.main:app', '--host', '127.0.0.1', '--port', $Port.ToString() -WorkingDirectory $root -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
 
 try {
     $health = Wait-ForBackend
 
-    $pythonResult = Invoke-Retry -OperationName 'Python customer app' -Script {
-        & $pythonExe (Join-Path $root 'customer-python\main.py')
-    }
-
-    $typescriptResult = Invoke-Retry -OperationName 'TypeScript customer app' -Script {
-        Push-Location (Join-Path $root 'customer-typescript')
-        try {
-            npm run --silent dev
+    $customerResults = @()
+    foreach ($customer in Get-CustomerDefinitions) {
+        $customerResult = Invoke-Retry -OperationName "$($customer.customerId) app" -Script {
+            Invoke-CustomerApplication -Customer $customer
         }
-        finally {
-            Pop-Location
+
+        $customerResults += [pscustomobject]@{
+            customerId = $customerResult.customer_id
+            recordCount = @($customerResult.records).Count
         }
     }
 
     $summary = [pscustomobject]@{
         backend = $health
-        pythonCustomer = $pythonResult.customer_id
-        pythonRecordCount = @($pythonResult.records).Count
-        typescriptCustomer = $typescriptResult.customer_id
-        typescriptRecordCount = @($typescriptResult.records).Count
+        customers = $customerResults
     }
 
     $summary | ConvertTo-Json -Depth 6

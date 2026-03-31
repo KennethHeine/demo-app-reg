@@ -5,7 +5,9 @@ param(
     [switch]$UseDeviceCode,
     [switch]$UseAzureCli,
     [string]$ApiDomain = 'kscloud.io',
-    [string]$CustomerDefinitionsPath = 'customers.json'
+    [string]$CustomerDefinitionsPath = 'customers.json',
+    [string]$ResourceGroupName = 'demo-app-reg',
+    [string]$KeyVaultName
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +16,7 @@ Set-StrictMode -Version Latest
 $root = Split-Path -Parent $PSScriptRoot
 $requiredRoleValue = 'Customer.Data.Read'
 $localSecretDisplayName = 'local-demo-secret'
+$localCertificateDisplayName = 'local-demo-certificate'
 $script:GraphAccessToken = $null
 
 function Get-JwtClaimValue {
@@ -104,6 +107,15 @@ function Connect-GraphWithAzureCli {
     return $account.tenantId
 }
 
+function Get-AzureCliAccount {
+    $accountJson = az account show --output json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($accountJson)) {
+        throw 'Azure CLI is not logged in. Run az login before provisioning Key Vault resources.'
+    }
+
+    return $accountJson | ConvertFrom-Json
+}
+
 function Invoke-GraphJson {
     param(
         [Parameter(Mandatory = $true)][string]$Method,
@@ -177,6 +189,20 @@ function Resolve-WorkspacePath {
     return [System.IO.Path]::GetFullPath((Join-Path $Root $PathValue))
 }
 
+function Get-OptionalPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)][object]$InputObject,
+        [Parameter(Mandatory = $true)][string]$PropertyName
+    )
+
+    $property = $InputObject.PSObject.Properties[$PropertyName]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return $property.Value
+}
+
 function Get-CustomerDefinitions {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -214,6 +240,113 @@ function Get-CustomerDefinitions {
     }
 
     return $definitions
+}
+
+function Get-DefaultKeyVaultName {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prefix,
+        [Parameter(Mandatory = $true)][string]$SubscriptionId
+    )
+
+    $safePrefix = ($Prefix -replace '[^a-zA-Z0-9]', '').ToLower()
+    if ($safePrefix.Length -gt 12) {
+        $safePrefix = $safePrefix.Substring(0, 12)
+    }
+
+    $safeSubscriptionId = ($SubscriptionId -replace '[^a-zA-Z0-9]', '').ToLower()
+    $suffixLength = [Math]::Min(8, $safeSubscriptionId.Length)
+    $suffix = $safeSubscriptionId.Substring(0, $suffixLength)
+    $candidate = ($safePrefix + 'kv' + $suffix).ToLower()
+    if ($candidate.Length -gt 24) {
+        $candidate = $candidate.Substring(0, 24)
+    }
+
+    return $candidate
+}
+
+function Get-AzureSignedInUser {
+    $userJson = az ad signed-in-user show --output json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($userJson)) {
+        throw 'The Azure CLI login is not a user context that can be granted Key Vault access policies.'
+    }
+
+    return $userJson | ConvertFrom-Json
+}
+
+function Get-AzureResourceGroup {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    $resourceGroupJson = az group show --name $Name --output json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resourceGroupJson)) {
+        throw "Resource group '$Name' was not found."
+    }
+
+    return $resourceGroupJson | ConvertFrom-Json
+}
+
+function Ensure-KeyVault {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)][string]$Location,
+        [Parameter(Mandatory = $true)][string]$UserPrincipalName,
+        [Parameter(Mandatory = $true)][string]$UserObjectId
+    )
+
+    $vaultJson = az keyvault show --name $Name --resource-group $ResourceGroupName --output json 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vaultJson)) {
+        $vaultJson = az keyvault create --name $Name --resource-group $ResourceGroupName --location $Location --output json
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vaultJson)) {
+            throw "Failed to create Key Vault '$Name' in resource group '$ResourceGroupName'."
+        }
+    }
+
+    $vault = $vaultJson | ConvertFrom-Json
+    $rbacEnabled = [bool]$vault.properties.enableRbacAuthorization
+    if ($rbacEnabled) {
+        $roleAssignments = az role assignment list --assignee-object-id $UserObjectId --scope $vault.id --query "[?roleDefinitionName=='Key Vault Administrator']" --output json | ConvertFrom-Json
+        if (@($roleAssignments).Count -eq 0) {
+            az role assignment create --assignee-object-id $UserObjectId --assignee-principal-type User --role "Key Vault Administrator" --scope $vault.id --output none | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to assign Key Vault Administrator to $UserPrincipalName on vault '$Name'."
+            }
+        }
+    }
+    else {
+        az keyvault set-policy --name $Name --upn $UserPrincipalName --secret-permissions get list set delete --certificate-permissions get list create import delete update --output none | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set Key Vault access policy for $UserPrincipalName on vault '$Name'."
+        }
+    }
+
+    return $vault
+}
+
+function Set-KeyVaultSecretValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$VaultName,
+        [Parameter(Mandatory = $true)][string]$SecretName,
+        [Parameter(Mandatory = $true)][string]$SecretValue
+    )
+
+    az keyvault secret set --vault-name $VaultName --name $SecretName --value $SecretValue --output none | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to store secret '$SecretName' in Key Vault '$VaultName'."
+    }
+}
+
+function Reset-CertificateCredential {
+    param(
+        [Parameter(Mandatory = $true)][string]$AppId,
+        [Parameter(Mandatory = $true)][string]$KeyVaultName,
+        [Parameter(Mandatory = $true)][string]$CertificateName,
+        [Parameter(Mandatory = $true)][string]$DisplayName
+    )
+
+    az ad app credential reset --id $AppId --create-cert --cert $CertificateName --keyvault $KeyVaultName --display-name $DisplayName --output none | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create or assign certificate '$CertificateName' for application '$AppId'."
+    }
 }
 
 function Get-VerifiedDomain {
@@ -455,6 +588,19 @@ else {
     $effectiveTenantId = if ([string]::IsNullOrWhiteSpace($TenantId)) { $graphContext.TenantId } else { $TenantId }
 }
 
+$azureCliAccount = Get-AzureCliAccount
+$azureResourceGroup = Get-AzureResourceGroup -Name $ResourceGroupName
+$azureSignedInUser = Get-AzureSignedInUser
+$resolvedKeyVaultName = if ([string]::IsNullOrWhiteSpace($KeyVaultName)) {
+    Get-DefaultKeyVaultName -Prefix $Prefix -SubscriptionId ([string]$azureCliAccount.id)
+}
+else {
+    $KeyVaultName.ToLowerInvariant()
+}
+
+$keyVault = Ensure-KeyVault -Name $resolvedKeyVaultName -ResourceGroupName $ResourceGroupName -Location ([string]$azureResourceGroup.location) -UserPrincipalName ([string]$azureSignedInUser.userPrincipalName) -UserObjectId ([string]$azureSignedInUser.id)
+$keyVaultUrl = [string]$keyVault.properties.vaultUri
+
 $backendDisplayName = "$Prefix-backend-api"
 $resolvedCustomerDefinitionsPath = Resolve-WorkspacePath -Root $root -PathValue $CustomerDefinitionsPath
 $customerDefinitions = Get-CustomerDefinitions -Path $resolvedCustomerDefinitionsPath
@@ -474,34 +620,70 @@ $apiScope = "$apiIdentifierUri/.default"
 $provisionedCustomers = @()
 foreach ($customerDefinition in $customerDefinitions) {
     $customerId = [string]$customerDefinition.customerId
-    $customerDisplayName = [string]$customerDefinition.displayName
+    $customerDisplayName = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'displayName')
     if ([string]::IsNullOrWhiteSpace($customerDisplayName)) {
         $customerDisplayName = "$Prefix-$customerId"
+    }
+
+    $customerAuthMethod = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'authMethod')
+    if ([string]::IsNullOrWhiteSpace($customerAuthMethod)) {
+        $customerAuthMethod = 'client-secret'
+    }
+
+    $secretName = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'keyVaultSecretName')
+    if ([string]::IsNullOrWhiteSpace($secretName)) {
+        $secretName = "$customerId-client-secret"
+    }
+
+    $certificateName = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'keyVaultCertificateName')
+    if ([string]::IsNullOrWhiteSpace($certificateName)) {
+        $certificateName = "$customerId-client-certificate"
     }
 
     $customerApplication = Update-RequiredResourceAccess -Application (Get-OrCreateApplication -DisplayName $customerDisplayName) -ResourceAppId $backendApplication.appId -RoleId $backendRole.id
     $customerServicePrincipal = Get-OrCreateServicePrincipal -AppId $customerApplication.appId
 
     Ensure-AppRoleAssignment -PrincipalServicePrincipal $customerServicePrincipal -ResourceServicePrincipal $backendServicePrincipal -RoleId $backendRole.id
-
-    $customerSecret = Replace-ClientSecret -Application $customerApplication -DisplayName $localSecretDisplayName
     $resolvedEnvFilePath = $null
-    $configuredEnvFilePath = [string]$customerDefinition.envFilePath
-    $apiBaseUrl = [string]$customerDefinition.apiBaseUrl
+    $configuredEnvFilePath = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'envFilePath')
+    $apiBaseUrl = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'apiBaseUrl')
     if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) {
         $apiBaseUrl = 'http://127.0.0.1:8000'
     }
 
+    $envLines = @(
+        "TENANT_ID=$effectiveTenantId",
+        "CLIENT_ID=$($customerApplication.appId)",
+        "API_SCOPE=$apiScope",
+        "API_BASE_URL=$apiBaseUrl",
+        "EXPECTED_CUSTOMER_ID=$customerId",
+        "KEY_VAULT_URL=$keyVaultUrl"
+    )
+
+    switch ($customerAuthMethod.ToLowerInvariant()) {
+        'client-secret' {
+            $customerSecret = Replace-ClientSecret -Application $customerApplication -DisplayName $localSecretDisplayName
+            Set-KeyVaultSecretValue -VaultName $resolvedKeyVaultName -SecretName $secretName -SecretValue $customerSecret
+            $envLines += @(
+                'CLIENT_AUTH_MODE=secret',
+                "CLIENT_SECRET_NAME=$secretName"
+            )
+        }
+        'certificate' {
+            Reset-CertificateCredential -AppId $customerApplication.appId -KeyVaultName $resolvedKeyVaultName -CertificateName $certificateName -DisplayName $localCertificateDisplayName
+            $envLines += @(
+                'CLIENT_AUTH_MODE=certificate',
+                "CLIENT_CERTIFICATE_SECRET_NAME=$certificateName"
+            )
+        }
+        default {
+            throw "Unsupported authMethod '$customerAuthMethod' for customer '$customerId'."
+        }
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($configuredEnvFilePath)) {
         $resolvedEnvFilePath = Resolve-WorkspacePath -Root $root -PathValue $configuredEnvFilePath
-        Write-EnvFile -Path $resolvedEnvFilePath -Lines @(
-            "TENANT_ID=$effectiveTenantId",
-            "CLIENT_ID=$($customerApplication.appId)",
-            "CLIENT_SECRET=$customerSecret",
-            "API_SCOPE=$apiScope",
-            "API_BASE_URL=$apiBaseUrl",
-            "EXPECTED_CUSTOMER_ID=$customerId"
-        )
+        Write-EnvFile -Path $resolvedEnvFilePath -Lines $envLines
     }
 
     $provisionedCustomers += [pscustomobject]@{
@@ -510,6 +692,9 @@ foreach ($customerDefinition in $customerDefinitions) {
         appId = $customerApplication.appId
         servicePrincipalId = $customerServicePrincipal.id
         envFilePath = $resolvedEnvFilePath
+        authMethod = $customerAuthMethod
+        keyVaultSecretName = if ($customerAuthMethod -eq 'client-secret') { $secretName } else { $null }
+        keyVaultCertificateName = if ($customerAuthMethod -eq 'certificate') { $certificateName } else { $null }
     }
 }
 
@@ -539,6 +724,11 @@ $summary = [pscustomobject]@{
     tenantId = $effectiveTenantId
     apiScope = $apiScope
     customerDefinitionsPath = $resolvedCustomerDefinitionsPath
+    keyVault = [pscustomobject]@{
+        name = $resolvedKeyVaultName
+        resourceGroupName = $ResourceGroupName
+        vaultUri = $keyVaultUrl
+    }
     backend = [pscustomobject]@{
         displayName = $backendDisplayName
         appId = $backendApplication.appId
@@ -551,6 +741,7 @@ $summary = [pscustomobject]@{
             displayName = $_.displayName
             appId = $_.appId
             servicePrincipalId = $_.servicePrincipalId
+            authMethod = $_.authMethod
         }
     })
     customerRegistryPath = $customerRegistryPath

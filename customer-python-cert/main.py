@@ -133,34 +133,17 @@ def _build_certificate_client_credential() -> dict[str, str]:
     return _load_certificate_credential_from_pem(secret_value)
 
 
-def _get_client_credential() -> str | dict[str, str]:
-    auth_mode = os.getenv("CLIENT_AUTH_MODE", "secret").strip().lower()
-    if auth_mode == "certificate":
-        return _build_certificate_client_credential()
-
-    secret_name = os.getenv("CLIENT_SECRET_NAME", "").strip()
-    if secret_name:
-        secret_value, _ = _get_key_vault_secret("CLIENT_SECRET_NAME")
-        return secret_value
-
-    direct_secret = os.getenv("CLIENT_SECRET", "").strip()
-    if direct_secret:
-        return direct_secret
-
-    raise RuntimeError("No client secret source was configured. Set CLIENT_SECRET_NAME or CLIENT_SECRET.")
-
-
 def main() -> int:
     try:
         tenant_id = _require_env("TENANT_ID")
         client_id = _require_env("CLIENT_ID")
         api_scope = _require_env("API_SCOPE")
         api_base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-        expected_customer_id = os.getenv("EXPECTED_CUSTOMER_ID", "customer-python").strip()
+        expected_customer_id = os.getenv("EXPECTED_CUSTOMER_ID", "customer-python-cert").strip()
 
         application = msal.ConfidentialClientApplication(
             client_id=client_id,
-            client_credential=_get_client_credential(),
+            client_credential=_build_certificate_client_credential(),
             authority=f"https://login.microsoftonline.com/{tenant_id}",
         )
 

@@ -3,14 +3,33 @@
     {
       "customerId": "customer-python",
       "displayName": "demo-app-reg-customer-python",
+      "runtime": "python",
+      "entryPoint": "customer-python/main.py",
       "envFilePath": "customer-python/.env",
-      "apiBaseUrl": "http://127.0.0.1:8000"
+      "apiBaseUrl": "http://127.0.0.1:8000",
+      "authMethod": "client-secret",
+      "keyVaultSecretName": "customer-python-client-secret"
     },
     {
       "customerId": "customer-typescript",
       "displayName": "demo-app-reg-customer-typescript",
+      "runtime": "typescript",
+      "entryPoint": "customer-typescript/src/index.ts",
+      "workingDirectory": "customer-typescript",
       "envFilePath": "customer-typescript/.env",
-      "apiBaseUrl": "http://127.0.0.1:8000"
+      "apiBaseUrl": "http://127.0.0.1:8000",
+      "authMethod": "client-secret",
+      "keyVaultSecretName": "customer-typescript-client-secret"
+    },
+    {
+      "customerId": "customer-python-cert",
+      "displayName": "demo-app-reg-customer-python-cert",
+      "runtime": "python",
+      "entryPoint": "customer-python-cert/main.py",
+      "envFilePath": "customer-python-cert/.env",
+      "apiBaseUrl": "http://127.0.0.1:8000",
+      "authMethod": "certificate",
+      "keyVaultCertificateName": "customer-python-cert-client-certificate"
     }
   ]
 }

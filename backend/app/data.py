@@ -35,4 +35,22 @@ MOCK_CUSTOMER_DATA = {
             "customer_success_manager": "Noah Larsen",
         },
     ],
+    "customer-python-cert": [
+        {
+            "customer_id": "customer-python-cert",
+            "account_number": "PC-3001",
+            "company_name": "Fabrikam Certificate Advisory",
+            "subscription": "Enterprise",
+            "monthly_spend": 4799,
+            "currency": "DKK",
+        },
+        {
+            "customer_id": "customer-python-cert",
+            "account_number": "PC-3001",
+            "company_name": "Fabrikam Certificate Advisory",
+            "subscription": "Enterprise",
+            "open_tickets": 0,
+            "customer_success_manager": "Mia Sørensen",
+        },
+    ],
 }

@@ -9,6 +9,11 @@
       "customerId": "customer-typescript",
       "appId": "00000000-0000-0000-0000-000000000002",
       "displayName": "demo-app-reg-customer-typescript"
+    },
+    {
+      "customerId": "customer-python-cert",
+      "appId": "00000000-0000-0000-0000-000000000003",
+      "displayName": "demo-app-reg-customer-python-cert"
     }
   ]
 }

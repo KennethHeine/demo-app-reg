@@ -17,7 +17,7 @@ Write-Host 'Upgrading pip'
 & $pythonExe -m pip install --upgrade pip
 
 Write-Host 'Installing Python dependencies'
-& $pythonExe -m pip install -r (Join-Path $root 'backend\requirements.txt') -r (Join-Path $root 'customer-python\requirements.txt')
+& $pythonExe -m pip install -r (Join-Path $root 'backend\requirements.txt') -r (Join-Path $root 'customer-python\requirements.txt') -r (Join-Path $root 'customer-python-cert\requirements.txt')
 
 Write-Host 'Installing TypeScript dependencies'
 Push-Location (Join-Path $root 'customer-typescript')
