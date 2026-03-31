@@ -1,5 +1,11 @@
 # demo-app-reg
 
+Additional documentation:
+
+- [docs/goal-and-intent.md](docs/goal-and-intent.md)
+- [docs/setup-architecture.md](docs/setup-architecture.md)
+- [docs/token-claims-explained.md](docs/token-claims-explained.md)
+
 End-to-end Entra ID demo with three applications:
 
 - A Python backend API that validates Microsoft Entra access tokens and returns customer-specific mock data.
@@ -37,6 +43,7 @@ The secret-based customer credentials are stored in Azure Key Vault, and the cer
 - `customers.json`: Customer onboarding manifest used by the provisioning script.
 - `scripts/setup-entra.ps1`: Creates or reuses app registrations and service principals, grants app permissions, and writes local `.env` files.
 - `scripts/bootstrap.ps1`: Creates `.venv` and installs Python and Node dependencies.
+- `scripts/export-jwt-examples.ps1`: Acquires tokens for every customer and writes readable JWT example files into `token-examples`.
 - `scripts/run-backend.ps1`: Runs the backend API locally.
 - `scripts/test-end-to-end.ps1`: Starts the backend, runs both clients, and verifies the returned data.
 
@@ -82,6 +89,12 @@ To onboard more customers, add entries to `customers.json` and rerun the provisi
 
 The same run also creates a Key Vault in the `demo-app-reg` resource group if one does not already exist, stores secret-based client credentials there, and provisions the certificate credential for the certificate-based customer.
 
+To export readable JWT example files for all customers:
+
+```powershell
+.\scripts\export-jwt-examples.ps1
+```
+
 2. Install dependencies:
 
 ```powershell
@@ -123,5 +136,6 @@ The provisioning script writes these local files:
 - `customer-python-cert/.env`
 - `customer-typescript/.env`
 - `entra-config.local.json`
+- `token-examples/*.jwt.md`
 
-These files are git-ignored because they contain tenant-specific ids and secrets.
+The local `.env` files and `entra-config.local.json` are git-ignored because they contain tenant-specific ids and secret references. The `token-examples` files are generated examples intended for inspection.
