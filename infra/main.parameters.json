@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "westeurope"
+    },
+    "containerRegistryName": {
+      "value": "demoappregacrbb732a02"
+    },
+    "logAnalyticsWorkspaceName": {
+      "value": "demo-app-reg-logs"
+    },
+    "managedEnvironmentName": {
+      "value": "demo-app-reg-env"
+    },
+    "userAssignedIdentityName": {
+      "value": "demo-app-reg-backend-mi"
+    },
+    "containerAppName": {
+      "value": "demo-app-reg-backend"
+    },
+    "keyVaultName": {
+      "value": "demoappregkvbb732a02"
+    },
+    "deployBackendApp": {
+      "value": true
+    },
+    "backendCpu": {
+      "value": "0.5"
+    },
+    "backendMemory": {
+      "value": "1Gi"
+    },
+    "minReplicas": {
+      "value": 0
+    },
+    "maxReplicas": {
+      "value": 2
+    }
+  }
+}

@@ -1,0 +1,16 @@
+.git/
+.venv/
+.azure/
+node_modules/
+dist/
+token-examples/
+.backend.*.log
+entra-config.local.json
+customer-python/.env
+customer-python-cert/.env
+customer-typescript/.env
+backend/.env
+customer-python-cert/*.pfx
+__pycache__/
+*.pyc
+!backend/customer-registry.local.json

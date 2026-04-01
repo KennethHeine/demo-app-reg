@@ -593,6 +593,43 @@ function Ensure-AppRoleAssignment {
     } | Out-Null
 }
 
+function Remove-AppRoleAssignment {
+    param(
+        [Parameter(Mandatory = $true)][object]$PrincipalServicePrincipal,
+        [Parameter(Mandatory = $true)][object]$ResourceServicePrincipal,
+        [Parameter(Mandatory = $true)][string]$RoleId
+    )
+
+    $existingAssignmentsResponse = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$($PrincipalServicePrincipal.id)/appRoleAssignments"
+    $existingAssignments = @($existingAssignmentsResponse.value)
+    $match = $existingAssignments | Where-Object {
+        [string]$_.resourceId -eq [string]$ResourceServicePrincipal.id -and [string]$_.appRoleId -eq [string]$RoleId
+    } | Select-Object -First 1
+
+    if ($null -eq $match) {
+        return
+    }
+
+    Invoke-GraphJson -Method DELETE -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$($PrincipalServicePrincipal.id)/appRoleAssignments/$($match.id)" | Out-Null
+}
+
+function Set-ServicePrincipalAssignmentRequired {
+    param(
+        [Parameter(Mandatory = $true)][object]$ServicePrincipal,
+        [Parameter(Mandatory = $true)][bool]$Required
+    )
+
+    if ([bool]$ServicePrincipal.appRoleAssignmentRequired -eq $Required) {
+        return
+    }
+
+    Invoke-GraphJson -Method PATCH -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$($ServicePrincipal.id)" -Body @{
+        appRoleAssignmentRequired = $Required
+    } | Out-Null
+
+    $ServicePrincipal.appRoleAssignmentRequired = $Required
+}
+
 function Write-EnvFile {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -667,6 +704,7 @@ $apiIdentifierUri = "api://$ApiDomain/$backendDisplayName"
 $backendApplication = Update-BackendApplication -Application (Get-OrCreateApplication -DisplayName $backendDisplayName) -IdentifierUri $apiIdentifierUri
 $backendRole = @($backendApplication.appRoles | Where-Object { $_.value -eq $requiredRoleValue } | Select-Object -First 1)
 $backendServicePrincipal = Get-OrCreateServicePrincipal -AppId $backendApplication.appId
+Set-ServicePrincipalAssignmentRequired -ServicePrincipal $backendServicePrincipal -Required $true
 
 $apiScope = "$apiIdentifierUri/.default"
 
@@ -693,10 +731,25 @@ foreach ($customerDefinition in $customerDefinitions) {
         $certificateName = "$customerId-client-certificate"
     }
 
+    $roleAssignment = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'roleAssignment')
+    if ([string]::IsNullOrWhiteSpace($roleAssignment)) {
+        $roleAssignment = 'assigned'
+    }
+
+    $roleAssignment = $roleAssignment.ToLowerInvariant()
+    if ($roleAssignment -notin @('assigned', 'not-assigned')) {
+        throw "Unsupported roleAssignment '$roleAssignment' for customer '$customerId'."
+    }
+
     $customerApplication = Update-RequiredResourceAccess -Application (Get-OrCreateApplication -DisplayName $customerDisplayName) -ResourceAppId $backendApplication.appId -RoleId $backendRole.id
     $customerServicePrincipal = Get-OrCreateServicePrincipal -AppId $customerApplication.appId
 
-    Ensure-AppRoleAssignment -PrincipalServicePrincipal $customerServicePrincipal -ResourceServicePrincipal $backendServicePrincipal -RoleId $backendRole.id
+    if ($roleAssignment -eq 'assigned') {
+        Ensure-AppRoleAssignment -PrincipalServicePrincipal $customerServicePrincipal -ResourceServicePrincipal $backendServicePrincipal -RoleId $backendRole.id
+    }
+    else {
+        Remove-AppRoleAssignment -PrincipalServicePrincipal $customerServicePrincipal -ResourceServicePrincipal $backendServicePrincipal -RoleId $backendRole.id
+    }
     $configuredEnvFilePath = [string](Get-OptionalPropertyValue -InputObject $customerDefinition -PropertyName 'envFilePath')
     $resolvedEnvFilePath = if (-not [string]::IsNullOrWhiteSpace($configuredEnvFilePath)) {
         Resolve-WorkspacePath -Root $root -PathValue $configuredEnvFilePath
@@ -770,6 +823,7 @@ foreach ($customerDefinition in $customerDefinitions) {
         servicePrincipalId = $customerServicePrincipal.id
         envFilePath = $resolvedEnvFilePath
         authMethod = $customerAuthMethod
+        roleAssignment = $roleAssignment
         keyVaultSecretName = if ($customerAuthMethod -eq 'client-secret') { $secretName } else { $null }
         keyVaultCertificateName = if ($customerAuthMethod -eq 'certificate') { $certificateName } else { $null }
     }
@@ -811,6 +865,7 @@ $summary = [pscustomobject]@{
         appId = $backendApplication.appId
         servicePrincipalId = $backendServicePrincipal.id
         identifierUri = $apiIdentifierUri
+        assignmentRequired = [bool]$backendServicePrincipal.appRoleAssignmentRequired
     }
     customers = @($provisionedCustomers | ForEach-Object {
         [pscustomobject]@{
@@ -819,6 +874,7 @@ $summary = [pscustomobject]@{
             appId = $_.appId
             servicePrincipalId = $_.servicePrincipalId
             authMethod = $_.authMethod
+            roleAssignment = $_.roleAssignment
         }
     })
     customerRegistryPath = $customerRegistryPath

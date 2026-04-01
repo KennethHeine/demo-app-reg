@@ -6,6 +6,6 @@ Explanation of the most important claims and how the backend uses them:
 
 Generated token example files:
 
-- customer-python: customer-python.jwt.md
-- customer-typescript: customer-typescript.jwt.md
-- customer-python-cert: customer-python-cert.jwt.md
+- customer-python: customer-python.jwt.md (expected-token-denied)
+- customer-typescript: customer-typescript.jwt.md (token-issued)
+- customer-python-cert: customer-python-cert.jwt.md (token-issued)

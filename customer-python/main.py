@@ -26,7 +26,10 @@ def main() -> int:
         client_id = _require_env("CLIENT_ID")
         client_secret = _require_env("CLIENT_SECRET")
         api_scope = _require_env("API_SCOPE")
-        api_base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+        api_base_url = os.getenv(
+            "API_BASE_URL_OVERRIDE",
+            os.getenv("API_BASE_URL", "http://127.0.0.1:8000"),
+        ).rstrip("/")
         expected_customer_id = os.getenv("EXPECTED_CUSTOMER_ID", "customer-python").strip()
 
         application = msal.ConfidentialClientApplication(

@@ -8,3 +8,4 @@ __pycache__/
 *.pfx
 node_modules/
 dist/
+infra/main.json

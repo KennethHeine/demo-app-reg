@@ -8,7 +8,8 @@
       "envFilePath": "customer-python/.env",
       "apiBaseUrl": "http://127.0.0.1:8000",
       "authMethod": "client-secret",
-      "keyVaultSecretName": "customer-python-client-secret"
+      "keyVaultSecretName": "customer-python-client-secret",
+      "roleAssignment": "not-assigned"
     },
     {
       "customerId": "customer-typescript",
@@ -19,7 +20,8 @@
       "envFilePath": "customer-typescript/.env",
       "apiBaseUrl": "http://127.0.0.1:8000",
       "authMethod": "client-secret",
-      "keyVaultSecretName": "customer-typescript-client-secret"
+      "keyVaultSecretName": "customer-typescript-client-secret",
+      "roleAssignment": "assigned"
     },
     {
       "customerId": "customer-python-cert",
@@ -30,7 +32,8 @@
       "localCertificatePath": "customer-python-cert/customer-python-cert-client-certificate.pfx",
       "apiBaseUrl": "http://127.0.0.1:8000",
       "authMethod": "certificate",
-      "keyVaultCertificateName": "customer-python-cert-client-certificate"
+      "keyVaultCertificateName": "customer-python-cert-client-certificate",
+      "roleAssignment": "assigned"
     }
   ]
 }

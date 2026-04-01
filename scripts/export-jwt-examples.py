@@ -96,6 +96,15 @@ def load_customer_definitions() -> list[dict[str, Any]]:
     return list(customers)
 
 
+def get_role_assignment(customer: dict[str, Any]) -> str:
+    value = str(customer.get("roleAssignment") or "assigned").strip().lower()
+    if value not in {"assigned", "not-assigned"}:
+        raise RuntimeError(
+            f"Unsupported roleAssignment '{value}' for customer '{customer.get('customerId', '')}'."
+        )
+    return value
+
+
 def load_env_config(env_path: Path) -> dict[str, str]:
     values = dotenv_values(env_path)
     return {key: str(value) for key, value in values.items() if value is not None}
@@ -160,13 +169,56 @@ def build_markdown(
     )
 
 
-def export_tokens() -> list[tuple[str, Path]]:
+def build_expected_failure_markdown(
+    customer: dict[str, Any],
+    config: dict[str, str],
+    token_result: dict[str, Any],
+) -> str:
+    customer_id = str(customer.get("customerId") or "")
+    display_name = str(customer.get("displayName") or customer_id)
+    error_codes = token_result.get("error_codes") or []
+
+    return "\n".join(
+        [
+            f"# Token Request Failure: {customer_id}",
+            "",
+            f"- Display name: {display_name}",
+            f"- Auth method: {customer.get('authMethod') or config.get('CLIENT_AUTH_MODE', 'secret')}",
+            f"- Client id: {config.get('CLIENT_ID', '')}",
+            f"- Scope: {config.get('API_SCOPE', '')}",
+            "- Role assignment: not-assigned",
+            f"- Generated at (UTC): {datetime.now(UTC).isoformat()}",
+            "",
+            "No JWT was issued for this customer because the backend enterprise application requires assignment and this client app is intentionally left unassigned for the demo.",
+            "",
+            f"- Error: {token_result.get('error', 'n/a')}",
+            f"- Error codes: {', '.join(str(item) for item in error_codes) if error_codes else 'n/a'}",
+            f"- Error description: {token_result.get('error_description', 'n/a')}",
+            "",
+            "## Raw Token Response",
+            "",
+            "```json",
+            json.dumps(token_result, indent=2, sort_keys=True),
+            "```",
+            "",
+        ]
+    )
+
+
+def is_expected_not_assigned_failure(token_result: dict[str, Any]) -> bool:
+    error_codes = {str(item) for item in (token_result.get("error_codes") or [])}
+    error_description = str(token_result.get("error_description") or "")
+    return "501051" in error_codes or "not assigned to a role" in error_description.lower()
+
+
+def export_tokens() -> list[dict[str, str]]:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    exports: list[tuple[str, Path]] = []
+    exports: list[dict[str, str]] = []
 
     for customer in load_customer_definitions():
         customer_id = str(customer.get("customerId") or "").strip()
         env_file_path = str(customer.get("envFilePath") or "").strip()
+        role_assignment = get_role_assignment(customer)
         if not customer_id or not env_file_path:
             raise RuntimeError(f"Customer entry is missing customerId or envFilePath: {customer!r}")
 
@@ -184,6 +236,21 @@ def export_tokens() -> list[tuple[str, Path]]:
 
         token_result = application.acquire_token_for_client(scopes=[api_scope])
         access_token = token_result.get("access_token")
+        if not access_token and role_assignment == "not-assigned" and is_expected_not_assigned_failure(token_result):
+            output_path = OUTPUT_DIR / f"{customer_id}.jwt.md"
+            output_path.write_text(
+                build_expected_failure_markdown(customer, config, token_result),
+                encoding="utf-8",
+            )
+            exports.append(
+                {
+                    "customerId": customer_id,
+                    "path": str(output_path),
+                    "result": "expected-token-denied",
+                }
+            )
+            continue
+
         if not access_token:
             raise RuntimeError(json.dumps(token_result, indent=2))
 
@@ -193,7 +260,13 @@ def export_tokens() -> list[tuple[str, Path]]:
             build_markdown(customer, config, access_token, header, payload),
             encoding="utf-8",
         )
-        exports.append((customer_id, output_path))
+        exports.append(
+            {
+                "customerId": customer_id,
+                "path": str(output_path),
+                "result": "token-issued",
+            }
+        )
 
     index_lines = [
         "# JWT Examples",
@@ -205,7 +278,9 @@ def export_tokens() -> list[tuple[str, Path]]:
         "Generated token example files:",
         "",
     ]
-    index_lines.extend(f"- {customer_id}: {path.name}" for customer_id, path in exports)
+    index_lines.extend(
+        f"- {item['customerId']}: {Path(item['path']).name} ({item['result']})" for item in exports
+    )
     index_lines.append("")
     (OUTPUT_DIR / "README.md").write_text("\n".join(index_lines), encoding="utf-8")
     return exports
@@ -218,7 +293,7 @@ def main() -> int:
             json.dumps(
                 {
                     "outputDirectory": str(OUTPUT_DIR),
-                    "files": [{"customerId": customer_id, "path": str(path)} for customer_id, path in exports],
+                    "files": exports,
                 },
                 indent=2,
             )

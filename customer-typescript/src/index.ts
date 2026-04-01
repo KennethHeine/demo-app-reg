@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const clientId = requireEnv("CLIENT_ID");
   const clientSecret = requireEnv("CLIENT_SECRET");
   const apiScope = requireEnv("API_SCOPE");
-  const apiBaseUrl = (process.env.API_BASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+  const apiBaseUrl = (process.env.API_BASE_URL_OVERRIDE ?? process.env.API_BASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
   const expectedCustomerId = (process.env.EXPECTED_CUSTOMER_ID ?? "customer-typescript").trim();
 
   const application = new ConfidentialClientApplication({

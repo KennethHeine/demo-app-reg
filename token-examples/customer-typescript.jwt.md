@@ -4,10 +4,10 @@
 - Auth method: client-secret
 - Client id: cff3b563-5c46-4c74-85bf-c317cc9d5449
 - Scope: api://kscloud.io/demo-app-reg-backend-api/.default
-- Generated at (UTC): 2026-03-31T19:21:46.977739+00:00
-- Issued at (UTC): 2026-03-31T19:16:45+00:00
-- Expires at (UTC): 2026-03-31T20:21:45+00:00
-- Audience: api://kscloud.io/demo-app-reg-backend-api
+- Generated at (UTC): 2026-04-01T05:36:24.511072+00:00
+- Issued at (UTC): 2026-04-01T05:31:22+00:00
+- Expires at (UTC): 2026-04-01T06:36:22+00:00
+- Audience: 444250ae-e178-4c13-9942-ec564e769bf4
 - Caller app id: cff3b563-5c46-4c74-85bf-c317cc9d5449
 - Roles: Customer.Data.Read
 
@@ -16,18 +16,19 @@
 Wrapped for readability.
 
 ```text
-eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IlFaZ045SHFOa0dORU00R2VLY3pEMDJQY1Z2NCIsImtpZCI6IlFaZ045SHFOa0dORU00R2VLY3pE
-MDJQY1Z2NCJ9.eyJhdWQiOiJhcGk6Ly9rc2Nsb3VkLmlvL2RlbW8tYXBwLXJlZy1iYWNrZW5kLWFwaSIsImlzcyI6Imh0dHBzOi8vc3RzLndpbmRvd3MubmV
-0LzE0YmMyZmY3LTVmZDEtNGNlMi1hMTEwLTRmNzFiOWEyY2U0MS8iLCJpYXQiOjE3NzQ5ODQ2MDUsIm5iZiI6MTc3NDk4NDYwNSwiZXhwIjoxNzc0OTg4NTA
-1LCJhaW8iOiJrMlpnWUtnSVp2OVIycG9xNHl4c0loaSszKzJUMitGeVJhTTdTbHR1bGovN2V5aEtOeG9BIiwiYXBwaWQiOiJjZmYzYjU2My01YzQ2LTRjNzQ
-tODViZi1jMzE3Y2M5ZDU0NDkiLCJhcHBpZGFjciI6IjEiLCJpZHAiOiJodHRwczovL3N0cy53aW5kb3dzLm5ldC8xNGJjMmZmNy01ZmQxLTRjZTItYTExMC0
-0ZjcxYjlhMmNlNDEvIiwib2lkIjoiMzUxMzVmOGEtMzBmOC00ODMyLWEzMTctMjJmMWFjYTJiODIxIiwicmgiOiIxLkFVRUI5eS04Rk5GZjRreWhFRTl4dWF
-MT1FhNVFRa1I0NFJOTW1VTHNWazUybV9RQUFBQkJBUS4iLCJyb2xlcyI6WyJDdXN0b21lci5EYXRhLlJlYWQiXSwic3ViIjoiMzUxMzVmOGEtMzBmOC00ODM
-yLWEzMTctMjJmMWFjYTJiODIxIiwidGlkIjoiMTRiYzJmZjctNWZkMS00Y2UyLWExMTAtNGY3MWI5YTJjZTQxIiwidXRpIjoidnVpSVZjZDFWa2FsVHNRb1E
-zNGxBQSIsInZlciI6IjEuMCIsInhtc19mdGQiOiJVdDd0UmF5UUo4VjhBUE9ZMGZncEp1WXRRYVdjbmZNS2VMRlkxQ3NySEswQmMzZGxaR1Z1WXkxa2MyMXo
-ifQ.QOKp83cIAWQ0uEtFxoYkovge8-4aapn_ThezMi7ZqoGs-_vfl1FAeUbkzvoqzZE41YlscDJfV7js297dDWN-E7fUzSw0ZRdKrs0KdP2-
-DY8StKaCyvL9fnCp7oIXfew2uQKkI9XVleMwPjFctGqm7YbShtDIsXFeqX7b3hN1L9TP5lXwJPJ0yYxEaujH_Whv6ssPg0-WqeH8hDXMeTav-cnYSawcz6C3
-uZwTiFRii8mMzUNq082ZfpgVsNbJKGEzKrCdnRmIUdHGLeag74zOaqZyVScS7G5-ekkoKmr39KaS9cAXULcmv4rqBMmT_Gqy6h8JEfiTvvNXIH24JrL0Ng
+eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6IlFaZ045SHFOa0dORU00R2VLY3pEMDJQY1Z2NCJ9.eyJhdWQiOiI0NDQyNTBhZS1lMTc4LTRjMTM
+tOTk0Mi1lYzU2NGU3NjliZjQiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vMTRiYzJmZjctNWZkMS00Y2UyLWExMTAtNGY3MWI
+5YTJjZTQxL3YyLjAiLCJpYXQiOjE3NzUwMjE0ODIsIm5iZiI6MTc3NTAyMTQ4MiwiZXhwIjoxNzc1MDI1MzgyLCJhaW8iOiJrMlpnWU5oVDUzd3MybGg5OHd
+HVk9TZVoraU1ZdWlMZVB0ejFpZSszNzdUYkFUK0VLdk1CIiwiYXpwIjoiY2ZmM2I1NjMtNWM0Ni00Yzc0LTg1YmYtYzMxN2NjOWQ1NDQ5IiwiYXpwYWNyIjo
+iMSIsIm9pZCI6IjM1MTM1ZjhhLTMwZjgtNDgzMi1hMzE3LTIyZjFhY2EyYjgyMSIsInJoIjoiMS5BVUVCOXktOEZORmY0a3loRUU5eHVhTE9RYTVRUWtSNDR
+STk1tVUxzVms1Mm1fUUFBQUJCQVEuIiwicm9sZXMiOlsiQ3VzdG9tZXIuRGF0YS5SZWFkIl0sInN1YiI6IjM1MTM1ZjhhLTMwZjgtNDgzMi1hMzE3LTIyZjF
+hY2EyYjgyMSIsInRpZCI6IjE0YmMyZmY3LTVmZDEtNGNlMi1hMTEwLTRmNzFiOWEyY2U0MSIsInV0aSI6IkhxWVY2Q1RWZWtHQVRiQ2o0ZEEwQUEiLCJ2ZXI
+iOiIyLjAiLCJ4bXNfZnRkIjoiTTBtM09rVk5wS3JqLTJLZ1FhdkFfbms3SWxJR0FMQ0x5UmhhWGo3UEdBc0JjM2RsWkdWdVl5MWtjMjF6In0.HqoTCRguimk
+byWggPfhDR4CGUaeTjf-QlJieAeCsnUqcmRiEPjPqFDIzar-
+8bo0s5vdaRwTOWbwvueY9zvyUFzRHFvDGr47CuSLFfmFxYbuOx8aEdjCMCmp6A2UAbjrQ_4WoBB_WEYmRvS0nmYq1xQdM9RRPieZXj8C6hw_FyKdAHkuHsz5
+jPrVG2vQjkbJra6khXtyJ0p4FvRPA0YhBbqR29-
+lNf0_YyTJ7S84FVTdRcu2MuRalqoaDOCxaVgEWIQ3CeX1kmfWIzZOynE9R0F1gdeWXaYrbV9MgqUXoEmBUDI7gE7rJcyWJRgye3gDtYPmCZy4e7vsa3e363M
+LMMQ
 ```
 
 ## Header
@@ -36,8 +37,7 @@ uZwTiFRii8mMzUNq082ZfpgVsNbJKGEzKrCdnRmIUdHGLeag74zOaqZyVScS7G5-ekkoKmr39KaS9cAX
 {
   "alg": "RS256",
   "kid": "QZgN9HqNkGNEM4GeKczD02PcVv4",
-  "typ": "JWT",
-  "x5t": "QZgN9HqNkGNEM4GeKczD02PcVv4"
+  "typ": "JWT"
 }
 ```
 
@@ -45,15 +45,14 @@ uZwTiFRii8mMzUNq082ZfpgVsNbJKGEzKrCdnRmIUdHGLeag74zOaqZyVScS7G5-ekkoKmr39KaS9cAX
 
 ```json
 {
-  "aio": "k2ZgYKgIZv9R2poq4yxsIhi+3+2T2+FyRaM7Sltulj/7eyhKNxoA",
-  "appid": "cff3b563-5c46-4c74-85bf-c317cc9d5449",
-  "appidacr": "1",
-  "aud": "api://kscloud.io/demo-app-reg-backend-api",
-  "exp": 1774988505,
-  "iat": 1774984605,
-  "idp": "https://sts.windows.net/14bc2ff7-5fd1-4ce2-a110-4f71b9a2ce41/",
-  "iss": "https://sts.windows.net/14bc2ff7-5fd1-4ce2-a110-4f71b9a2ce41/",
-  "nbf": 1774984605,
+  "aio": "k2ZgYNhT53ws2lh98wGVOSeZ+iMYuiLePtz1ie+377TbAT+EKvMB",
+  "aud": "444250ae-e178-4c13-9942-ec564e769bf4",
+  "azp": "cff3b563-5c46-4c74-85bf-c317cc9d5449",
+  "azpacr": "1",
+  "exp": 1775025382,
+  "iat": 1775021482,
+  "iss": "https://login.microsoftonline.com/14bc2ff7-5fd1-4ce2-a110-4f71b9a2ce41/v2.0",
+  "nbf": 1775021482,
   "oid": "35135f8a-30f8-4832-a317-22f1aca2b821",
   "rh": "1.AUEB9y-8FNFf4kyhEE9xuaLOQa5QQkR44RNMmULsVk52m_QAAABBAQ.",
   "roles": [
@@ -61,8 +60,8 @@ uZwTiFRii8mMzUNq082ZfpgVsNbJKGEzKrCdnRmIUdHGLeag74zOaqZyVScS7G5-ekkoKmr39KaS9cAX
   ],
   "sub": "35135f8a-30f8-4832-a317-22f1aca2b821",
   "tid": "14bc2ff7-5fd1-4ce2-a110-4f71b9a2ce41",
-  "uti": "vuiIVcd1VkalTsQoQ34lAA",
-  "ver": "1.0",
-  "xms_ftd": "Ut7tRayQJ8V8APOY0fgpJuYtQaWcnfMKeLFY1CsrHK0Bc3dlZGVuYy1kc21z"
+  "uti": "HqYV6CTVekGATbCj4dA0AA",
+  "ver": "2.0",
+  "xms_ftd": "M0m3OkVNpKrj-2KgQavA_nk7IlIGALCLyRhaXj7PGAsBc3dlZGVuYy1kc21z"
 }
 ```

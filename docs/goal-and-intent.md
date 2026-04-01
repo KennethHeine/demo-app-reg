@@ -10,6 +10,7 @@ Show how multiple customer applications can call the same backend API while only
 
 - A shared API can validate Microsoft Entra access tokens reliably.
 - Customer applications can authenticate as confidential clients with either a client secret or a certificate.
+- Microsoft Entra can block an unassigned client app before it ever receives a token for the API.
 - The backend can combine coarse-grained authorization and fine-grained tenant-specific routing.
 - Customer apps can keep their runtime secret or certificate locally while the platform still maintains an internal backup and certificate source.
 - Customer onboarding can scale through a manifest-driven provisioning model instead of code changes and one-off manual setup.
@@ -20,6 +21,11 @@ The role and the app id solve different problems.
 
 - The app role answers: is this caller allowed to call the backend API at all?
 - The caller app id mapping answers: which customer dataset should this caller receive?
+
+In the current demo, Entra enterprise app assignment is an extra outer gate.
+
+- If the client app is not assigned, Entra stops token issuance before the backend is involved.
+- If the client app is assigned and gets a token, the backend still checks the role claim and caller app id mapping.
 
 If the backend only used the app role, every authorized customer would be equally allowed but not separated. If it only used the app id mapping, there would be no explicit permission boundary on the API itself.
 

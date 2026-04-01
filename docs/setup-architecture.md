@@ -14,11 +14,13 @@ This demo is a tenant-local reference setup for machine-to-machine access from c
 ## Authentication Model
 
 1. The backend app registration exposes the application role `Customer.Data.Read`.
-2. Each customer app registration is granted that role on the backend API.
-3. Each customer acquires a token for `api://kscloud.io/demo-app-reg-backend-api/.default`.
-4. The backend validates signature, issuer, audience, tenant, and required role.
-5. The backend reads the caller app id claim and resolves it through the generated customer registry.
-6. The backend returns only the records for that customer id.
+2. The backend enterprise application has `Assignment required? = Yes`, so only assigned client apps can obtain access tokens for the API.
+3. The customer manifest carries a `roleAssignment` state per customer.
+4. Assigned customers acquire a token for `api://kscloud.io/demo-app-reg-backend-api/.default` and can call the backend.
+5. The intentionally unassigned demo customer fails during token acquisition with the Entra assignment-required error path.
+6. When a token reaches the backend, the backend validates signature, issuer, audience, tenant, and required role.
+7. The backend reads the caller app id claim and resolves it through the generated customer registry.
+8. The backend returns only the records for that customer id.
 
 ## Credential Storage
 
@@ -36,28 +38,30 @@ This demo is a tenant-local reference setup for machine-to-machine access from c
 3. Ensures a Key Vault exists in the `demo-app-reg` resource group.
 4. Grants the signed-in user access to that Key Vault.
 5. Reads `customers.json` and provisions each customer app registration.
-6. Assigns the backend application role to each customer service principal.
-7. Creates a secret or certificate credential per customer based on the configured auth mode.
-8. Stores secret credentials in Key Vault as internal backup.
-9. Exports certificate credentials into a local customer app file when the customer uses certificate auth.
-10. Writes local `.env` files for the customer apps with the secret value or local certificate path.
-11. Regenerates `backend/customer-registry.local.json` for backend authorization.
+6. Sets `Assignment required? = Yes` on the backend enterprise application.
+7. Adds or removes the backend application role assignment for each customer service principal according to `customers.json`.
+8. Creates a secret or certificate credential per customer based on the configured auth mode.
+9. Stores secret credentials in Key Vault as internal backup.
+10. Exports certificate credentials into a local customer app file when the customer uses certificate auth.
+11. Writes local `.env` files for the customer apps with the secret value or local certificate path.
+12. Regenerates `backend/customer-registry.local.json` for backend authorization.
 
 ## Scaling Pattern
 
 The important scaling change is that the backend no longer requires one environment variable per customer app id.
 
 - New customers are added to `customers.json`.
+- The same manifest can intentionally model assigned and not-assigned callers.
 - Provisioning regenerates the backend registry file.
 - The backend authorization code stays unchanged.
-- Secret or certificate settings are expressed in the manifest rather than in backend code.
+- Secret, certificate, and role-assignment settings are expressed in the manifest rather than in backend code.
 
 This is enough for tens or low hundreds of customers in a demo or controlled environment. For larger or production-grade setups, the next step is to move customer registry data into a persistent store instead of a generated local file.
 
 ## Local Execution
 
 - `scripts/bootstrap.ps1` installs Python and Node dependencies.
-- `scripts/test-end-to-end.ps1` starts the backend and runs every customer defined in `customers.json`.
+- `scripts/test-end-to-end.ps1` targets the deployed Container App by default, or starts a local backend when `-UseLocalBackend` is passed; it runs unauthenticated checks first, then verifies both the assigned success flows and the intentionally unassigned denial flow defined in `customers.json`.
 - `scripts/export-jwt-examples.ps1` acquires tokens for every customer and writes readable JWT example files into `token-examples`.
 
 ## Production Considerations
@@ -75,3 +79,16 @@ For production, deploy the backend API as an Azure Container App. Container Apps
 - **Custom domains and TLS**: managed certificates for HTTPS without manual cert provisioning.
 
 This avoids the operational overhead and cost of a dedicated API Management instance while still covering rate limiting, auth offloading, versioning, and monitoring for a customer-facing API.
+
+The reusable deployment assets for this repo now live under `infra/` and are orchestrated by `scripts/deploy-backend-bicep.ps1`. That keeps the Azure resource topology, Container Apps settings, and Easy Auth wiring in source-controlled code instead of relying on one-off portal or CLI setup.
+
+For this demo deployment, the checked-in Container Apps defaults use `minReplicas = 0` and `maxReplicas = 2`. That is an intentional cost optimization so the app can scale to zero when idle, which is appropriate for a demo but means the first request after idle may see cold-start latency.
+
+The deployed Easy Auth behavior is also now explicit in code and tests:
+
+- `/health` is excluded from Easy Auth so probes and health checks stay public.
+- protected routes return `401` when unauthenticated.
+- `/.auth/me` also returns `401` when there is no authenticated session.
+- only the three provisioned demo customer app registrations are allowed through the Easy Auth client-application filter.
+
+On top of Easy Auth, the backend enterprise application also uses Entra's `Assignment required? = Yes` setting. In the current demo setup, `customer-python` is intentionally left without the backend role assignment, so it fails during token acquisition with the assignment-required error instead of reaching the API.

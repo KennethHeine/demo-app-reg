@@ -4,17 +4,24 @@ This document explains what `scripts/test-end-to-end.ps1` does when you run it.
 
 ## Purpose
 
-The script is a local integration test for the full demo flow.
+The script is an integration test for the full demo flow.
+
+By default, it runs against the live deployed backend. If you pass `-UseLocalBackend`, it starts a local backend instead. If you pass `-ApiBaseUrl`, it targets that remote URL explicitly instead of resolving the current live Container App URL from Azure.
+
+That remote mode is the full live verification for the deployed Azure Container Apps backend.
 
 It verifies that:
 
 - the backend API can start successfully
 - the backend health endpoint reports `ok`
-- every customer app defined in `customers.json` can get a token from Microsoft Entra ID
-- every customer app can call the backend successfully
-- the backend returns only that customer's data
+- unauthenticated access to `GET /customer-data` is rejected with `401`
+- unauthenticated access to `GET /.auth/me` is rejected with `401` when running against the live deployment
+- every customer with `roleAssignment: assigned` in `customers.json` can get a token from Microsoft Entra ID
+- every assigned customer can call the backend successfully
+- the intentionally unassigned demo customer fails during token acquisition and shows the assignment-required behavior
+- the backend returns only each assigned customer's data
 
-In short, it tests the complete chain from app startup to token acquisition to backend authorization.
+In short, it tests the complete chain from app startup to unauthenticated rejection to token acquisition to backend authorization, while also demonstrating the Entra denial path for an unassigned caller.
 
 ## What It Uses
 
@@ -25,29 +32,45 @@ The script depends on these local files and conventions:
 - each customer's `runtime`, `entryPoint`, and `workingDirectory` fields in `customers.json`
 - the generated local `.env` files that were created by `scripts/setup-entra.ps1`
 
+When you use the default live mode without `-ApiBaseUrl`, it also depends on Azure CLI being installed and signed in so it can resolve the current Container App ingress FQDN from the `demo-app-reg` resource group.
+
 If the Python virtual environment does not exist, the script stops immediately and tells you to run `scripts/bootstrap.ps1` first.
+
+During execution, the script prints a line for each test step so you can follow the run interactively.
 
 ## Step By Step
 
-### 1. Resolve local paths and ports
+### 1. Resolve paths, target mode, and backend URL
 
 At the top, the script builds the paths it will need:
 
 - the repo root
 - the Python executable in `.venv`
-- the backend URL, defaulting to `http://127.0.0.1:8000`
+- the backend URL, defaulting to the live Container App URL resolved from Azure
 - two log files: `.backend.stdout.log` and `.backend.stderr.log`
 - the customer manifest path `customers.json`
 
-You can override the backend port with:
+The local mode switch is:
 
 ```powershell
-.\scripts\test-end-to-end.ps1 -Port 8010
+.\scripts\test-end-to-end.ps1 -UseLocalBackend
 ```
 
-### 2. Start the backend API
+You can then override the local backend port with:
 
-The script launches the backend in a separate process with Uvicorn:
+```powershell
+.\scripts\test-end-to-end.ps1 -UseLocalBackend -Port 8010
+```
+
+You can target a specific deployed backend instead of the default Azure-resolved URL with:
+
+```powershell
+.\scripts\test-end-to-end.ps1 -ApiBaseUrl https://<your-container-app-fqdn>
+```
+
+### 2. Start the backend API only when running locally
+
+If `-UseLocalBackend` is provided, the script launches the backend in a separate process with Uvicorn:
 
 ```powershell
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port <port>
@@ -60,9 +83,11 @@ Standard output and standard error are redirected into:
 
 That matters because if startup fails, the script includes those log files in the error message.
 
+If `-UseLocalBackend` is not provided, this entire startup step is skipped and the script talks to the live backend URL directly.
+
 ### 3. Wait for the backend health check
 
-The function `Wait-ForBackend` polls `GET /health` until the backend is ready.
+The function `Wait-ForBackend` polls `GET /health` until the selected backend URL is ready.
 
 Current behavior:
 
@@ -78,9 +103,20 @@ The function `Get-CustomerDefinitions` loads `customers.json` and reads the `cus
 
 If the file is missing or contains no customers, the script fails early.
 
-This means the test automatically follows the current demo setup. If you add a new customer to `customers.json`, this script will include that customer the next time it runs.
+This means the test automatically follows the current demo setup. If you add a new customer to `customers.json`, this script will include that customer the next time it runs, including whatever `roleAssignment` expectation you define there.
 
-### 5. Run each customer app
+### 5. Run unauthenticated checks
+
+Before it runs any customer application, the script verifies that protected endpoints reject requests without authentication.
+
+Current behavior:
+
+- `GET /customer-data` must return `401` in both local and remote mode
+- `GET /.auth/me` must return `401` in remote mode
+
+That gives one place to verify both the backend's local auth gate and the live Easy Auth gate.
+
+### 6. Run each customer app
 
 The function `Invoke-CustomerApplication` looks at the `runtime` field for each customer.
 
@@ -92,12 +128,18 @@ Supported runtimes today:
 Each customer app is expected to do the following on its own:
 
 - load its local `.env`
+- optionally honor the process-level `API_BASE_URL_OVERRIDE` when the test script points them to a remote backend
 - acquire an access token for the backend API
 - call `GET /customer-data`
 - validate that the returned `customer_id` matches its expected customer id
 - print the JSON payload to stdout
 
-### 6. Retry each customer app if needed
+The test script then decides whether that customer should succeed or fail based on the manifest:
+
+- `roleAssignment: assigned` means the customer should get a token and complete the backend call successfully
+- `roleAssignment: not-assigned` means the customer should fail during token acquisition with the Entra assignment-required behavior
+
+### 7. Retry each customer app if needed
 
 Each customer execution is wrapped in `Invoke-Retry`.
 
@@ -106,20 +148,25 @@ Current retry behavior:
 - up to 8 attempts
 - 10 seconds between attempts
 
-This is mainly there to make the test more stable after provisioning changes, especially when a fresh secret or certificate was just created and Entra needs a short time before token issuance is consistent.
+This is mainly there to make the test more stable after provisioning changes, especially when a fresh secret, certificate, or role-assignment change was just applied and Entra needs a short time before token behavior is consistent.
 
 If a customer still fails on the last attempt, the script stops and includes that app's output in the error.
 
-### 7. Build a summary object
+### 8. Build a summary object
 
-For every successful customer run, the script captures:
+For every customer run, the script captures:
 
 - `customerId`
-- `recordCount`
+- `roleAssignment`
+- `result`
+- either `recordCount` for successful customers or the Entra failure details for the intentionally unassigned customer
 
 It then returns one JSON summary that contains:
 
-- the backend health payload
+- the backend mode (`local` or `remote`)
+- the backend URL under test
+- the backend health payload nested under `backend.health`
+- the unauthenticated HTTP checks that ran before the customer flows
 - the list of customer results
 
 The output looks like this shape:
@@ -127,14 +174,32 @@ The output looks like this shape:
 ```json
 {
   "backend": {
-    "status": "ok",
-    "tenant_id": "...",
-    "accepted_audiences": ["..."],
-    "registered_customers": 3
+    "mode": "remote",
+    "url": "https://<your-container-app-fqdn>",
+    "health": {
+      "status": "ok"
+    }
   },
+  "unauthenticatedChecks": [
+    {
+      "path": "/customer-data",
+      "statusCode": 401,
+      "expectedStatusCode": 401,
+      "body": ""
+    }
+  ],
   "customers": [
     {
       "customerId": "customer-python",
+      "roleAssignment": "not-assigned",
+      "result": "expected-token-denied",
+      "error": "invalid_grant",
+      "errorCode": "501051"
+    },
+    {
+      "customerId": "customer-typescript",
+      "roleAssignment": "assigned",
+      "result": "success",
       "recordCount": 2
     }
   ]
@@ -146,10 +211,12 @@ The output looks like this shape:
 This is not just a backend smoke test. It verifies several things at once:
 
 - the backend can boot with the current local configuration
-- the backend health endpoint is reachable
+- the backend health endpoint is reachable locally or on the deployed URL
+- protected endpoints reject unauthenticated callers before the positive-path tests run
 - the customer app credentials are usable
-- Microsoft Entra token acquisition works for every configured customer
-- backend token validation succeeds
+- Microsoft Entra token acquisition works for assigned customers
+- Microsoft Entra assignment-required denial is working for the intentionally unassigned customer
+- backend token validation succeeds in local mode or through Easy Auth plus backend authorization in remote mode
 - app role authorization succeeds
 - app id to customer id mapping succeeds
 - customer data isolation still works
@@ -162,13 +229,13 @@ The script does not:
 - create secrets or certificates
 - inspect JWT claims in detail
 - run unit tests
-- verify production deployment behavior
+- deploy Azure resources
 
-Provisioning is handled by `scripts/setup-entra.ps1`. JWT inspection is handled by `scripts/export-jwt-examples.ps1` and the generated files in `token-examples`.
+Provisioning is handled by `scripts/setup-entra.ps1`. Deployment is handled by `scripts/deploy-backend-bicep.ps1`. JWT inspection is handled by `scripts/export-jwt-examples.ps1` and the generated files in `token-examples`.
 
 ## Cleanup Behavior
 
-The backend process is always stopped in the `finally` block, even if one of the customer apps fails.
+When the script starts a local backend, that backend process is always stopped in the `finally` block, even if one of the customer apps fails.
 
 That prevents the local backend process from being left running after a failed test.
 
@@ -181,5 +248,6 @@ This script is the right check to run after:
 - changing backend auth logic
 - changing customer app auth logic
 - adding a new customer to `customers.json`
+- redeploying the live Container App and wanting to confirm both unauthenticated rejection and customer success remotely
 
-If it passes, the main demo path is working end to end.
+If it passes, the main demo path is working end to end, the negative-path unauthenticated checks are still behaving as expected, and the not-assigned Entra denial case is still reproducible.
