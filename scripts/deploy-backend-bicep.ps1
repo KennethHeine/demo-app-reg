@@ -1,10 +1,14 @@
 [CmdletBinding()]
 param(
+    [string]$Prefix = 'demo-app-reg',
     [string]$ResourceGroupName = 'demo-app-reg',
     [string]$Location = 'westeurope',
+    [string]$ApiDomain = 'kscloud.io',
+    [string]$KeyVaultName,
     [string]$ImageRepository = 'demo-app-reg-backend',
     [string]$ImageTag = (Get-Date -Format 'yyyyMMddHHmmss'),
     [switch]$SkipBuild,
+    [switch]$DeployBackendEntra,
     [switch]$RunRemoteE2E
 )
 
@@ -14,6 +18,7 @@ Set-StrictMode -Version Latest
 $root = Split-Path -Parent $PSScriptRoot
 $entraConfigPath = Join-Path $root 'entra-config.local.json'
 $backendEnvPath = Join-Path $root 'backend\.env'
+$entraTemplateDeploymentScriptPath = Join-Path $root 'scripts\deploy-backend-entra-bicep.ps1'
 $templateFilePath = Join-Path $root 'infra\main.bicep'
 $parameterFilePath = Join-Path $root 'infra\main.parameters.json'
 $dockerFilePath = Join-Path $root 'backend\Dockerfile'
@@ -235,6 +240,28 @@ function Ensure-AppRegistrationRedirectUri {
     }
 }
 
+$shouldDeployBackendEntra = $DeployBackendEntra -or -not (Test-Path $entraConfigPath) -or -not (Test-Path $backendEnvPath)
+if ($shouldDeployBackendEntra) {
+    if (-not (Test-Path $entraTemplateDeploymentScriptPath)) {
+        throw "The backend Entra deployment script was not found: $entraTemplateDeploymentScriptPath"
+    }
+
+    $entraDeploymentArgs = @{
+        Prefix = $Prefix
+        ApiDomain = $ApiDomain
+        DeploymentLocation = $Location
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($KeyVaultName)) {
+        $entraDeploymentArgs.KeyVaultName = $KeyVaultName
+    }
+
+    & $entraTemplateDeploymentScriptPath @entraDeploymentArgs | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'The backend Entra app registration deployment failed.'
+    }
+}
+
 $entraConfig = Read-JsonFile -Path $entraConfigPath
 $backendEnv = Read-KeyValueFile -Path $backendEnvPath
 $customerRegistry = Read-JsonFile -Path $customerRegistryPath
@@ -248,7 +275,10 @@ Ensure-ResourceGroup
 $tenantId = [string]$entraConfig.tenantId
 $backendClientId = [string]$entraConfig.backend.appId
 $backendAppIdUri = [string]$entraConfig.backend.identifierUri
-$keyVaultName = [string]$entraConfig.keyVault.name
+$keyVaultName = if (-not [string]::IsNullOrWhiteSpace($KeyVaultName)) { $KeyVaultName } else { [string]$entraConfig.keyVault.name }
+if ([string]::IsNullOrWhiteSpace($keyVaultName)) {
+    throw 'Missing Key Vault name. Run scripts/setup-entra.ps1 first so the demo Key Vault and customer assets exist, or pass -KeyVaultName explicitly.'
+}
 $requiredAppRole = Get-RequiredHashtableValue -Table $backendEnv -Key 'REQUIRED_APP_ROLE'
 $customerAppIds = @($customerRegistry.customers | ForEach-Object { [string]$_.appId })
 $allowedAudiences = @($backendClientId, $backendAppIdUri)

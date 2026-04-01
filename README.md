@@ -142,11 +142,18 @@ Generated deployment assets:
 
 - `infra/main.bicep`
 - `infra/main.parameters.json`
+- `infra/entra-backend-api.bicep`
+- `infra/entra-backend-api.parameters.json`
 - `infra/modules/*.bicep`
 - `backend/Dockerfile`
+- `scripts/deploy-backend-entra-bicep.ps1`
 - `scripts/deploy-backend-bicep.ps1`
 
-The deployment script reuses the existing `demo-app-reg` resource group and Key Vault, builds the backend image into ACR, deploys the Container Apps infrastructure, creates or rotates the Easy Auth client secret, and updates the backend app registration with the Container Apps callback URI.
+The repo now includes a tenant-scope Microsoft Graph Bicep template for the backend API app registration and its enterprise application. The helper script `scripts/deploy-backend-entra-bicep.ps1` deploys that Entra template, then writes the same local `backend/.env` and `entra-config.local.json` shape that the rest of the repo already expects.
+
+The main deployment script still reuses the existing `demo-app-reg` resource group and Key Vault, builds the backend image into ACR, deploys the Container Apps infrastructure, creates or rotates the Easy Auth client secret, and updates the backend app registration with the Container Apps callback URI.
+
+Because Microsoft Graph Bicep requires a stable `uniqueName`, the new Entra template is safe for new or already-Bicep-managed backend app registrations. The current backend app created by `scripts/setup-entra.ps1` has `uniqueName = null`, so it is intentionally not auto-adopted by the new Graph Bicep path to avoid creating a duplicate app registration.
 
 The checked-in Container Apps defaults are tuned for a low-cost demo deployment:
 
@@ -160,6 +167,15 @@ Deploy the backend:
 ```powershell
 .\scripts\deploy-backend-bicep.ps1
 ```
+
+If you want the backend app registration itself created from Microsoft Graph Bicep, deploy that first in a clean tenant or with a new backend app registration, then run the resource-group deployment:
+
+```powershell
+.\scripts\deploy-backend-entra-bicep.ps1
+.\scripts\deploy-backend-bicep.ps1 -DeployBackendEntra
+```
+
+`-DeployBackendEntra` also causes the main deployment script to refresh the backend app registration metadata before deploying Azure resources. The script still expects the demo Key Vault and customer assets to exist, so for the full end-to-end demo you should keep running `scripts/setup-entra.ps1` for customer app registrations and credential material.
 
 Deploy and immediately run the remote end-to-end verification:
 

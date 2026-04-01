@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "backendDisplayName": {
+      "value": "demo-app-reg-backend-api"
+    },
+    "backendUniqueName": {
+      "value": "demo-app-reg-backend-api"
+    },
+    "apiIdentifierUri": {
+      "value": "api://kscloud.io/demo-app-reg-backend-api"
+    },
+    "requiredAppRoleDisplayName": {
+      "value": "Customer Data Reader"
+    },
+    "requiredAppRoleDescription": {
+      "value": "Allows the customer application to read its own data from the demo backend."
+    },
+    "requiredAppRoleValue": {
+      "value": "Customer.Data.Read"
+    },
+    "appRoleAssignmentRequired": {
+      "value": true
+    }
+  }
+}
